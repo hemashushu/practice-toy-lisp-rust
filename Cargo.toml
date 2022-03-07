@@ -1,0 +1,15 @@
+[package]
+name = "practice-toy-lisp-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name ="toy_lisp"
+path = "src/lib.rs"
+
+[[bin]]
+name ="toy"
+path ="bin/toy.rs"
+
+[dependencies]
+# rustyline = "9.1.2"
