@@ -64,9 +64,15 @@ fn parse_single_object(token: &String) -> Object {
 fn eval(node: &Object, env: &mut Environment) -> Result<Object, Error> {
     match node {
         // 标识符，从 Environment 里获取对应的值
-        Object::Symbol(name) => env.lookup(name),
+        Object::Symbol(name) => match env.lookup(name) {
+            Some(o) => Ok(o.clone()),
+            None => Err(Error("identifier not found".to_string())),
+        },
+        // 数字
         Object::Number(_) => Ok(node.clone()),
+        // 布尔值
         Object::Bool(_) => Ok(node.clone()),
+        // 列表
         Object::List(list) => {
             let (first_node, rest_nodes) =
                 list.split_first().ok_or(Error("empty list".to_string()))?;
@@ -97,18 +103,50 @@ fn eval_list(node: &Object, rest_nodes: &[Object], env: &mut Environment) -> Res
 }
 
 fn eval_do(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
-    Err(Error("not implementd yet".to_string()))
+    if nodes.len() == 0 {
+        return Err(Error(
+            "sub-expressions are required in DO expression".to_string(),
+        ));
+    }
+
+    let mut child_env = Environment::new(env);
+    let mut result = Err(Error("unreachable".to_string()));
+
+    for node in nodes {
+        result = eval(node, &mut child_env);
+    }
+
+    result
 }
 
 fn eval_let(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
-    Err(Error("not implementd yet".to_string()))
+    if nodes.len() != 2 {
+        return Err(Error(
+            "expected 2 sub-expressions for the LET expression".to_string(),
+        ));
+    }
+
+    let identifier = &nodes[0];
+    let obj = &nodes[1];
+
+    match identifier {
+        Object::Symbol(name) => {
+            env.define(name, obj)?;
+            Ok(obj.clone())
+        },
+        _ => Err(Error(
+            "the identifier should be a string/symbol".to_string(),
+        )),
+    }
 }
 
 fn eval_if(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
     // e.g. (if test sequence alternative)
 
     if nodes.len() != 3 {
-        return Err(Error("expected 3 forms for the IF expression".to_string()));
+        return Err(Error(
+            "expected 3 sub-expressions for the IF expression".to_string(),
+        ));
     }
 
     let test_object = eval(&nodes[0], env)?;
