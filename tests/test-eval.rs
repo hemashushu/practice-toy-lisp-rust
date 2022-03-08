@@ -1,4 +1,4 @@
-use toy_lisp::{ast::Object, eval};
+use toy_lisp::{ast::Func, ast::Object, eval};
 
 #[test]
 fn eval_base_expression() {
@@ -87,4 +87,66 @@ fn eval_let() {
     )
     .expect("eval failed");
     assert!(matches!(r3, Object::Number(1)));
+}
+
+#[test]
+fn eval_defn() {
+    let r1 = eval(
+        "\
+        (do
+            (defn name (a b) (add a b))
+            name
+        )
+        ",
+    )
+    .expect("eval failed");
+
+    match &r1 {
+        Object::Function(f) => {
+            let c = f.as_ref();
+            matches!(*c, Func::Closure(..));
+        }
+        _ => assert!(false),
+    }
+
+    assert_eq!("(defn name (a b) (add a b))", r1.to_string());
+}
+
+#[test]
+fn eval_defn_call() {
+    let r1 = eval(
+        "\
+        (do
+            (defn myadd (a b) (add a b))
+            (myadd 1 2)
+        )
+        ",
+    )
+    .expect("eval failed");
+
+    assert!(matches!(r1, Object::Number(3)));
+}
+
+#[test]
+fn eval_fib() {
+    let r1 = eval(
+        "\
+        (do
+            (defn fib (a)
+                (if
+                    (lte a 1)
+                    a
+                    (add
+                        (fib (sub a 1))
+                        (fib (sub a 2))
+                    )
+                )
+            )
+            (fib 10)
+        )
+        ",
+    )
+    .expect("eval failed");
+
+    assert!(matches!(r1, Object::Number(55)));
 }

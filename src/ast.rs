@@ -1,7 +1,5 @@
-use core::fmt;
-use std::collections::HashMap;
-
 use crate::error::Error;
+use core::fmt;
 
 // AST 的节点跟求值后数据共用一个枚举类型
 // Environment 的记录也是共用这个枚举类型
@@ -21,8 +19,12 @@ pub enum Func {
     Builtin(fn(&[Object]) -> Result<Object, Error>),
 
     // 用户自定义函数
-    // name, params, body, static scope
-    Closure(String, Vec<String>, Object, HashMap<String, Object>),
+    // name, params, body
+    //
+    // todo::
+    // Closure 本应该还有一个 &Environment 成员，用于记录函数定义时的环境
+    // 不过暂时还不知道如何用 rust 实现，所以目前 closure 没有闭包功能
+    Closure(String, Vec<String>, Object), // &Environment
 }
 
 // 实现 Display trait 能自动获得 ToString，
@@ -37,14 +39,12 @@ impl fmt::Display for Object {
                 let ss: Vec<String> = list.iter().map(|x| x.to_string()).collect();
                 format!("({})", ss.join(" "))
             }
-            Object::Function(f) => {
-                match f.as_ref() {
-                    Func::Builtin(_) => "fn".to_string(),
-                    Func::Closure(name, params, body, _) => {
-                        format!("(defn {} ({}) {})", name, params.join(" "), body)
-                    }
+            Object::Function(f) => match f.as_ref() {
+                Func::Builtin(_) => "fn".to_string(),
+                Func::Closure(name, params, body) => {
+                    format!("(defn {} ({}) {})", name, params.join(" "), body)
                 }
-            }
+            },
         };
 
         write!(formatter, "{}", s)

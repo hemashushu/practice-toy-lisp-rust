@@ -17,6 +17,16 @@ impl Environment<'_> {
         }
     }
 
+    pub fn new_with_records<'a>(
+        records: HashMap<String, Object>,
+        parent: &'a Environment,
+    ) -> Environment<'a> {
+        Environment {
+            records: records,
+            parent: Some(parent),
+        }
+    }
+
     pub fn new_global() -> Environment<'static> {
         let mut records: HashMap<String, Object> = HashMap::new();
 
@@ -218,7 +228,7 @@ fn parse_bool(obj: &Object) -> Result<bool, Error> {
 #[cfg(test)]
 mod tests {
     use super::Environment;
-    use crate::ast::{Object, Func};
+    use crate::ast::{Func, Object};
 
     #[test]
     fn test_global_env_builtin_func() {
@@ -355,3 +365,8 @@ mod tests {
         assert!(matches!(r5, None));
     }
 }
+
+// pub struct ClosureMap<'a> {
+//     max_id: u32,
+//     envs: HashMap<u32, &'a Environment<'a>>
+// }

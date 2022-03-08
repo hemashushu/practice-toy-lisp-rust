@@ -1,4 +1,6 @@
-use crate::ast::{Object, Func};
+use std::collections::HashMap;
+
+use crate::ast::{Func, Object};
 use crate::environment::Environment;
 use crate::error::Error;
 
@@ -66,7 +68,7 @@ fn eval(node: &Object, env: &mut Environment) -> Result<Object, Error> {
         // 标识符，从 Environment 里获取对应的值
         Object::Symbol(name) => match env.lookup(name) {
             Some(o) => Ok(o.clone()),
-            None => Err(Error("identifier not found".to_string())),
+            None => Err(Error(format!("identifier not found: {}", name))),
         },
         // 数字
         Object::Number(_) => Ok(node.clone()),
@@ -90,9 +92,10 @@ fn eval_list(node: &Object, rest_nodes: &[Object], env: &mut Environment) -> Res
                 "do" => eval_do(rest_nodes, env),
                 "let" => eval_let(rest_nodes, env),
                 "if" => eval_if(rest_nodes, env),
+                "defn" => eval_defn(rest_nodes, env),
                 _ => {
                     // 预期是函数（内置函数或者用户自定义函数）
-                    eval_function(node, rest_nodes, env)
+                    eval_function_call(node, rest_nodes, env)
                 }
             }
         }
@@ -133,7 +136,7 @@ fn eval_let(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
         Object::Symbol(name) => {
             env.define(name, obj)?;
             Ok(obj.clone())
-        },
+        }
         _ => Err(Error(
             "the identifier should be a string/symbol".to_string(),
         )),
@@ -164,7 +167,51 @@ fn eval_if(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
     }
 }
 
-fn eval_function(
+fn eval_defn(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
+    // e.g. (defn name (param1 param2) body)
+    if nodes.len() != 3 {
+        return Err(Error(
+            "expected 3 sub-expressions for the DEFN expression".to_string(),
+        ));
+    }
+
+    let name = match &nodes[0] {
+        Object::Symbol(name) => Ok(name),
+        _=> Err(Error("function name should be a symbol".to_string()))
+    }?;
+
+    let params = match &nodes[1] {
+        Object::List(list) => {
+            let symbol_list: Vec<String> = list
+                .iter()
+                .filter_map(|x| match x {
+                    Object::Symbol(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect();
+
+            if symbol_list.len() != list.len() {
+                return Err(Error("parameter name should be a symbol".to_string()));
+            } else {
+                Ok(symbol_list)
+            }
+        }
+        _ => Err(Error("expected parameter name list".to_string())),
+    }?;
+
+    // todo::
+    // Closure 本应该还有一个 &Environment 成员，用于记录函数定义时的环境
+    // 不过暂时还不知道如何用 rust 实现，所以目前 closure 没有闭包功能
+    // let static_scope_records = env;
+
+    let f = Object::Function(Box::new(Func::Closure(name.clone(), params, (&nodes[2]).clone())));
+
+    env.define(name, &f)?;
+
+    Ok(f)
+}
+
+fn eval_function_call(
     node: &Object,
     rest_nodes: &[Object],
     env: &mut Environment,
@@ -176,13 +223,31 @@ fn eval_function(
                 let args = rest_nodes
                     .iter()
                     .map(|n| eval(n, env))
-                    .collect::<Result<Vec<Object>, Error>>();
-                bf(&args?)
-            },
-            Func::Closure(..) => {
-                panic!("not implemented")
+                    .collect::<Result<Vec<Object>, Error>>()?;
+
+                bf(&args)
             }
-        }
+            Func::Closure(_, params, body) => {
+                let args = rest_nodes
+                    .iter()
+                    .map(|n| eval(n, env))
+                    .collect::<Result<Vec<Object>, Error>>()?;
+
+                // todo::
+                // Closure 本应该还有一个 &Environment 成员，用于记录函数定义时的环境
+                // 不过暂时还不知道如何用 rust 实现，所以目前 closure 没有闭包功能
+
+                let mut records = HashMap::<String, Object>::new();
+                for (idx, name) in params.iter().enumerate() {
+                    records.insert(name.clone(), args[idx].clone());
+                }
+
+                // todo::
+                // 这里暂时传入 parent env
+                let mut child_env = Environment::new_with_records(records, env);
+                eval(body, &mut child_env)
+            }
+        },
         _ => Err(Error("expected a function".to_string())),
     }
 }
