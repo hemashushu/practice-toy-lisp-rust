@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::Object;
+use crate::ast::{Func, Object};
 use crate::error::Error;
 
 pub struct Environment<'a> {
@@ -10,37 +10,73 @@ pub struct Environment<'a> {
 
 impl Environment<'_> {
     pub fn new<'a>(parent: &'a Environment) -> Environment<'a> {
-        let mut records: HashMap<String, Object> = HashMap::new();
+        let records: HashMap<String, Object> = HashMap::new();
         Environment {
-            records,
+            records: records,
             parent: Some(parent),
         }
     }
 
-    pub fn new_global<'a>() -> Environment<'a> {
+    pub fn new_global() -> Environment<'static> {
         let mut records: HashMap<String, Object> = HashMap::new();
 
-        records.insert("add".to_string(), Object::Func(builtin_fn_add));
-        records.insert("sub".to_string(), Object::Func(builtin_fn_sub));
-        records.insert("mul".to_string(), Object::Func(builtin_fn_mul));
-        records.insert("div".to_string(), Object::Func(builtin_fn_div));
+        records.insert(
+            "add".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_add))),
+        );
+        records.insert(
+            "sub".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_sub))),
+        );
+        records.insert(
+            "mul".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_mul))),
+        );
+        records.insert(
+            "div".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_div))),
+        );
 
-        records.insert("gt".to_string(), Object::Func(builtin_fn_greater_than));
+        records.insert(
+            "gt".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_greater_than))),
+        );
         records.insert(
             "gte".to_string(),
-            Object::Func(builtin_fn_greater_or_equal_to),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_greater_or_equal_to))),
         );
-        records.insert("lt".to_string(), Object::Func(builtin_fn_less_than));
-        records.insert("lte".to_string(), Object::Func(builtin_fn_less_or_equal_to));
-        records.insert("eq".to_string(), Object::Func(builtin_fn_equal_to));
-        records.insert("neq".to_string(), Object::Func(builtin_fn_not_equal_to));
+        records.insert(
+            "lt".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_less_than))),
+        );
+        records.insert(
+            "lte".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_less_or_equal_to))),
+        );
+        records.insert(
+            "eq".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_equal_to))),
+        );
+        records.insert(
+            "neq".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_not_equal_to))),
+        );
 
-        records.insert("and".to_string(), Object::Func(builtin_fn_and));
-        records.insert("or".to_string(), Object::Func(builtin_fn_or));
-        records.insert("not".to_string(), Object::Func(builtin_fn_not));
+        records.insert(
+            "and".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_and))),
+        );
+        records.insert(
+            "or".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_or))),
+        );
+        records.insert(
+            "not".to_string(),
+            Object::Function(Box::new(Func::Builtin(builtin_fn_not))),
+        );
 
         Environment {
-            records,
+            records: records,
             parent: None,
         }
     }
@@ -53,14 +89,18 @@ impl Environment<'_> {
 
         let ns = name.to_string();
         self.records.insert(ns, obj.clone());
+
         Ok(())
     }
 
     pub fn lookup(&self, name: &str) -> Option<&Object> {
-        self.records.get(name).or_else(|| match self.parent {
-            Some(p) => p.lookup(name),
-            _ => None,
-        })
+        match self.records.get(name) {
+            Some(o) => Some(o),
+            None => match self.parent {
+                Some(re) => re.lookup(name),
+                None => None,
+            },
+        }
     }
 }
 
@@ -178,7 +218,7 @@ fn parse_bool(obj: &Object) -> Result<bool, Error> {
 #[cfg(test)]
 mod tests {
     use super::Environment;
-    use crate::ast::Object;
+    use crate::ast::{Object, Func};
 
     #[test]
     fn test_global_env_builtin_func() {
@@ -186,9 +226,12 @@ mod tests {
 
         let v1 = env.lookup("add");
         match v1 {
-            Some(f) => {
-                assert!(matches!(f, Object::Func(_)));
-            }
+            Some(f) => match f {
+                Object::Function(ff) => {
+                    assert!(matches!(ff.as_ref(), Func::Builtin(_)))
+                }
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
     }
@@ -229,7 +272,7 @@ mod tests {
         assert!(matches!(r1, None));
 
         {
-            let mut env_child = Environment::new(&env_parent);
+            let env_child = Environment::new(&env_parent);
 
             // 尝试从 child 获取 "foo"，应该返回 Err
             let c1 = env_child.lookup("foo");
@@ -237,11 +280,12 @@ mod tests {
         }
 
         // 在 parent 里定义 "foo"
-        env_parent.define("foo", &Object::Number(123));
+        let r2 = env_parent.define("foo", &Object::Number(123));
+        assert!(matches!(r2, Ok(_)));
 
         // 尝试从 parent 获取 parent "foo"，应该返回 123
-        let r2 = env_parent.lookup("foo");
-        match r2 {
+        let r3 = env_parent.lookup("foo");
+        match r3 {
             Some(o) => match *o {
                 Object::Number(n) => assert_eq!(n, 123),
                 _ => assert!(false),
@@ -279,8 +323,8 @@ mod tests {
         }
 
         // 尝试从 parent 获取 parent "foo"，应该返回 123
-        let r3 = env_parent.lookup("foo");
-        match r3 {
+        let r4 = env_parent.lookup("foo");
+        match r4 {
             Some(o) => match *o {
                 Object::Number(n) => assert_eq!(n, 123),
                 _ => assert!(false),
@@ -307,7 +351,7 @@ mod tests {
         }
 
         // 尝试从 parent 获取 child "bar"，应该返回 Err
-        let r4 = env_parent.lookup("bar");
-        assert!(matches!(r4, None));
+        let r5 = env_parent.lookup("bar");
+        assert!(matches!(r5, None));
     }
 }

@@ -14,7 +14,7 @@
 
 练习使用 Rust lang 编写简单的 _玩具 LISP_。
 
-> 注：本项目是学习 Rust 的随手练习，并无实际用途。
+> 注：本项目是学习 Rust 的随手练习，并无实际用途。有关 LISP 的实现原理可以参考 《Build Your Own Lisp》 https://buildyourownlisp.com/
 
 ## 使用方法
 

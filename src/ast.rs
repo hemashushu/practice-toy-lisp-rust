@@ -1,4 +1,5 @@
 use core::fmt;
+use std::collections::HashMap;
 
 use crate::error::Error;
 
@@ -6,11 +7,22 @@ use crate::error::Error;
 // Environment 的记录也是共用这个枚举类型
 #[derive(Clone)]
 pub enum Object {
-    Symbol(String),    // 标识符（identifier）或者关键字（如 if, let, fn 等）
-    Bool(bool),        // 布尔型
-    Number(i64),       // 整数
-    List(Vec<Object>), // 子列表
-    Func(fn(&[Object]) -> Result<Object, Error>), // 内置函数
+    Symbol(String),      // 标识符（identifier）或者关键字（如 if, let, fn 等）
+    Bool(bool),          // 布尔型
+    Number(i64),         // 整数
+    List(Vec<Object>),   // 子列表
+    Function(Box<Func>), // 函数
+}
+
+#[derive(Clone)]
+pub enum Func {
+    // 内置函数
+    // fn (param: &[Object]) -> Result<Object, Error> {...}
+    Builtin(fn(&[Object]) -> Result<Object, Error>),
+
+    // 用户自定义函数
+    // name, params, body, static scope
+    Closure(String, Vec<String>, Object, HashMap<String, Object>),
 }
 
 // 实现 Display trait 能自动获得 ToString，
@@ -18,13 +30,20 @@ pub enum Object {
 impl fmt::Display for Object {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
-            Object::Symbol(s) => s.clone(),      // 标识符和关键字以字符串原样返回
-            Object::Number(n) => n.to_string(),  // 数字转换为字符串返回
-            Object::Bool(b) => b.to_string(),    // 布尔型转为字符串返回
-            Object::Func(_) => "fn".to_string(), // 函数显示为代号 "fn"
+            Object::Symbol(s) => s.clone(),     // 标识符和关键字以字符串原样返回
+            Object::Number(n) => n.to_string(), // 数字转换为字符串返回
+            Object::Bool(b) => b.to_string(),   // 布尔型转为字符串返回
             Object::List(list) => {
                 let ss: Vec<String> = list.iter().map(|x| x.to_string()).collect();
                 format!("({})", ss.join(" "))
+            }
+            Object::Function(f) => {
+                match f.as_ref() {
+                    Func::Builtin(_) => "fn".to_string(),
+                    Func::Closure(name, params, body, _) => {
+                        format!("(defn {} ({}) {})", name, params.join(" "), body)
+                    }
+                }
             }
         };
 

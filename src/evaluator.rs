@@ -1,4 +1,4 @@
-use crate::ast::Object;
+use crate::ast::{Object, Func};
 use crate::environment::Environment;
 use crate::error::Error;
 
@@ -171,12 +171,17 @@ fn eval_function(
 ) -> Result<Object, Error> {
     let first_eval = eval(node, env)?;
     match first_eval {
-        Object::Func(f) => {
-            let args = rest_nodes
-                .iter()
-                .map(|n| eval(n, env))
-                .collect::<Result<Vec<Object>, Error>>();
-            f(&args?)
+        Object::Function(f) => match f.as_ref() {
+            Func::Builtin(bf) => {
+                let args = rest_nodes
+                    .iter()
+                    .map(|n| eval(n, env))
+                    .collect::<Result<Vec<Object>, Error>>();
+                bf(&args?)
+            },
+            Func::Closure(..) => {
+                panic!("not implemented")
+            }
         }
         _ => Err(Error("expected a function".to_string())),
     }
