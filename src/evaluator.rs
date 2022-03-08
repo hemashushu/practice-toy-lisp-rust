@@ -19,11 +19,11 @@ fn tokenize(expr: &str) -> Vec<String> {
 fn parse(tokens: &[String]) -> Result<(Object, &[String]), Error> {
     let (token, rest_tokens) = tokens
         .split_first()
-        .ok_or(Error("required at least one token".to_string()))?;
+        .ok_or(Error::EvalError("required at least one token".to_string()))?;
 
     match token.as_str() {
         "(" => parse_list(rest_tokens),
-        ")" => Err(Error("unexpected right paren".to_string())),
+        ")" => Err(Error::EvalError("unexpected right paren".to_string())),
         _ => Ok((parse_single_object(token), rest_tokens)),
     }
 }
@@ -36,7 +36,7 @@ fn parse_list(tokens: &[String]) -> Result<(Object, &[String]), Error> {
     loop {
         let (token, rest_tokens) = remain_tokens
             .split_first()
-            .ok_or(Error("missing right paren".to_string()))?;
+            .ok_or(Error::EvalError("missing right paren".to_string()))?;
 
         if token == ")" {
             return Ok((Object::List(objects), rest_tokens));
@@ -68,7 +68,7 @@ fn eval(node: &Object, env: &mut Environment) -> Result<Object, Error> {
         // 标识符，从 Environment 里获取对应的值
         Object::Symbol(name) => match env.lookup(name) {
             Some(o) => Ok(o.clone()),
-            None => Err(Error(format!("identifier not found: {}", name))),
+            None => Err(Error::EvalError(format!("identifier not found: {}", name))),
         },
         // 数字
         Object::Number(_) => Ok(node.clone()),
@@ -77,10 +77,10 @@ fn eval(node: &Object, env: &mut Environment) -> Result<Object, Error> {
         // 列表
         Object::List(list) => {
             let (first_node, rest_nodes) =
-                list.split_first().ok_or(Error("empty list".to_string()))?;
+                list.split_first().ok_or(Error::EvalError("empty list".to_string()))?;
             eval_list(first_node, rest_nodes, env)
         }
-        _ => Err(Error("unsupported object".to_string())),
+        _ => Err(Error::EvalError("unsupported object".to_string())),
     }
 }
 
@@ -99,7 +99,7 @@ fn eval_list(node: &Object, rest_nodes: &[Object], env: &mut Environment) -> Res
                 }
             }
         }
-        _ => Err(Error(
+        _ => Err(Error::EvalError(
             "expected the first form of the list is a symbol".to_string(),
         )),
     }
@@ -107,13 +107,13 @@ fn eval_list(node: &Object, rest_nodes: &[Object], env: &mut Environment) -> Res
 
 fn eval_do(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
     if nodes.len() == 0 {
-        return Err(Error(
+        return Err(Error::EvalError(
             "sub-expressions are required in DO expression".to_string(),
         ));
     }
 
     let mut child_env = Environment::new(env);
-    let mut result = Err(Error("unreachable".to_string()));
+    let mut result = Err(Error::EvalError("unreachable".to_string()));
 
     for node in nodes {
         result = eval(node, &mut child_env);
@@ -124,7 +124,7 @@ fn eval_do(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
 
 fn eval_let(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
     if nodes.len() != 2 {
-        return Err(Error(
+        return Err(Error::EvalError(
             "expected 2 sub-expressions for the LET expression".to_string(),
         ));
     }
@@ -137,7 +137,7 @@ fn eval_let(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
             env.define(name, obj)?;
             Ok(obj.clone())
         }
-        _ => Err(Error(
+        _ => Err(Error::EvalError(
             "the identifier should be a string/symbol".to_string(),
         )),
     }
@@ -147,7 +147,7 @@ fn eval_if(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
     // e.g. (if test sequence alternative)
 
     if nodes.len() != 3 {
-        return Err(Error(
+        return Err(Error::EvalError(
             "expected 3 sub-expressions for the IF expression".to_string(),
         ));
     }
@@ -161,7 +161,7 @@ fn eval_if(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
                 eval(&nodes[2], env)
             }
         }
-        _ => Err(Error(
+        _ => Err(Error::EvalError(
             "expected a bool value for the IF test expression".to_string(),
         )),
     }
@@ -170,14 +170,14 @@ fn eval_if(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
 fn eval_defn(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
     // e.g. (defn name (param1 param2) body)
     if nodes.len() != 3 {
-        return Err(Error(
+        return Err(Error::EvalError(
             "expected 3 sub-expressions for the DEFN expression".to_string(),
         ));
     }
 
     let name = match &nodes[0] {
         Object::Symbol(name) => Ok(name),
-        _=> Err(Error("function name should be a symbol".to_string()))
+        _=> Err(Error::EvalError("function name should be a symbol".to_string()))
     }?;
 
     let params = match &nodes[1] {
@@ -191,12 +191,12 @@ fn eval_defn(nodes: &[Object], env: &mut Environment) -> Result<Object, Error> {
                 .collect();
 
             if symbol_list.len() != list.len() {
-                return Err(Error("parameter name should be a symbol".to_string()));
+                return Err(Error::EvalError("parameter name should be a symbol".to_string()));
             } else {
                 Ok(symbol_list)
             }
         }
-        _ => Err(Error("expected parameter name list".to_string())),
+        _ => Err(Error::EvalError("expected parameter name list".to_string())),
     }?;
 
     // todo::
@@ -248,7 +248,7 @@ fn eval_function_call(
                 eval(body, &mut child_env)
             }
         },
-        _ => Err(Error("expected a function".to_string())),
+        _ => Err(Error::EvalError("expected a function".to_string())),
     }
 }
 
@@ -258,7 +258,7 @@ pub fn eval_from_string(program: &str, env: &mut Environment) -> Result<Object, 
     let (object, rest_tokens) = parse(&tokens)?;
 
     if rest_tokens.len() > 0 {
-        return Err(Error("invalid expression".to_string()));
+        return Err(Error::EvalError("invalid expression".to_string()));
     }
 
     let value = eval(&object, env)?;

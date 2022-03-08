@@ -94,7 +94,7 @@ impl Environment<'_> {
     // 如果名称在当前 scope 里已经定义，则返回 Err
     pub fn define(&mut self, name: &str, obj: &Object) -> Result<(), Error> {
         if self.records.contains_key(name) {
-            return Err(Error("identifier already exists".to_string()));
+            return Err(Error::EvalError("identifier already exists".to_string()));
         }
 
         let ns = name.to_string();
@@ -168,7 +168,7 @@ fn builtin_fn_not_equal_to(objs: &[Object]) -> Result<Object, Error> {
     let obj = builtin_fn_equal_to(objs)?;
     match obj {
         Object::Bool(b) => Ok(Object::Bool(!b)),
-        _ => Err(Error("unreach".to_string())),
+        _ => Err(Error::EvalError("unreach".to_string())),
     }
 }
 
@@ -184,7 +184,7 @@ fn builtin_fn_or(objs: &[Object]) -> Result<Object, Error> {
 
 fn builtin_fn_not(objs: &[Object]) -> Result<Object, Error> {
     if objs.len() != 1 {
-        return Err(Error("required 1 arguments".to_string()));
+        return Err(Error::EvalError("required 1 arguments".to_string()));
     }
 
     let b = parse_bool(&objs[0])?;
@@ -193,7 +193,7 @@ fn builtin_fn_not(objs: &[Object]) -> Result<Object, Error> {
 
 fn parse_number_pair(objs: &[Object]) -> Result<(i64, i64), Error> {
     if objs.len() != 2 {
-        return Err(Error("required 2 arguments".to_string()));
+        return Err(Error::EvalError("required 2 arguments".to_string()));
     }
 
     let left = parse_number(&objs[0])?;
@@ -204,13 +204,13 @@ fn parse_number_pair(objs: &[Object]) -> Result<(i64, i64), Error> {
 fn parse_number(obj: &Object) -> Result<i64, Error> {
     match obj {
         Object::Number(i) => Ok(*i),
-        _ => Err(Error("the object is not a number".to_string())),
+        _ => Err(Error::EvalError("the object is not a number".to_string())),
     }
 }
 
 fn parse_bool_pair(objs: &[Object]) -> Result<(bool, bool), Error> {
     if objs.len() != 2 {
-        return Err(Error("required 2 arguments".to_string()));
+        return Err(Error::EvalError("required 2 arguments".to_string()));
     }
 
     let left = parse_bool(&objs[0])?;
@@ -221,7 +221,7 @@ fn parse_bool_pair(objs: &[Object]) -> Result<(bool, bool), Error> {
 fn parse_bool(obj: &Object) -> Result<bool, Error> {
     match obj {
         Object::Bool(b) => Ok(*b),
-        _ => Err(Error("the object is not a boolean".to_string())),
+        _ => Err(Error::EvalError("the object is not a boolean".to_string())),
     }
 }
 

@@ -2,6 +2,8 @@ use std::{fs, io};
 
 use environment::Environment;
 
+use crate::error::Error;
+
 pub mod ast;
 mod environment;
 pub mod error;
@@ -21,7 +23,9 @@ pub fn repl() {
         let text = read_line();
         match eval(&text) {
             Ok(res) => println!("{}", res),
-            Err(err) => println!("{}", err.0),
+            Err(err) => match err {
+                Error::EvalError(msg) =>println!("{}", msg)
+            } ,
         }
     }
 }
@@ -30,7 +34,9 @@ pub fn run(filepath: &str) {
     let text = fs::read_to_string(filepath).expect("read file error");
     match eval(&text) {
         Ok(res) => println!("{}", res),
-        Err(err) => println!("{}", err.0),
+        Err(err) => match err {
+            Error::EvalError(msg) =>println!("{}", msg)
+        } ,
     }
 }
 
