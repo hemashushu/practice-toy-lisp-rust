@@ -1,5 +1,6 @@
-use crate::error::Error;
+use crate::{env::Environment, error::Error};
 use core::fmt;
+use std::{cell::RefCell, rc::{Weak, Rc}};
 
 // AST 的节点跟求值后数据共用一个枚举类型
 // Environment 的记录也是共用这个枚举类型
@@ -19,12 +20,23 @@ pub enum Func {
     Builtin(fn(&[Object]) -> Result<Object, Error>),
 
     // 用户自定义函数
-    // name, params, body
-    //
-    // todo::
-    // Closure 本应该还有一个 &Environment 成员，用于记录函数定义时的环境
-    // 不过暂时还不知道如何用 rust 实现，所以目前 closure 没有闭包功能
-    Closure(String, Vec<String>, Object), // &Environment
+    // name, params, body, static scope environment
+    UserDefined(
+        String,
+        Vec<String>,
+        Object,
+
+        // 用户自定义函数无法绑定动态产生的作用域，比如在 defn 里面定义 defn 并返回该函数，
+        // 该函数离开外层的 defn 之后，随着外层的 defn 的作用域结束，该函数所绑定的
+        // 作用域（即之前所捕获的值）也随之消失。
+        //
+        // 这里之所以区分 defn 和 fn，主要是为了试验 Weak 和 Rc 的区别。
+        Weak<RefCell<Option<Environment>>>,
+    ),
+
+    // 匿名函数
+    // params, body, static scope environment
+    Closure(Vec<String>, Object, Rc<RefCell<Option<Environment>>>),
 }
 
 // 实现 Display trait 能自动获得 ToString，
@@ -35,14 +47,17 @@ impl fmt::Display for Object {
             Object::Symbol(s) => s.clone(),     // 标识符和关键字以字符串原样返回
             Object::Number(n) => n.to_string(), // 数字转换为字符串返回
             Object::Bool(b) => b.to_string(),   // 布尔型转为字符串返回
-            Object::List(list) => {
-                let ss: Vec<String> = list.iter().map(|x| x.to_string()).collect();
+            Object::List(l) => {
+                let ss: Vec<String> = l.iter().map(|x| x.to_string()).collect();
                 format!("({})", ss.join(" "))
             }
             Object::Function(f) => match f.as_ref() {
-                Func::Builtin(_) => "fn".to_string(),
-                Func::Closure(name, params, body) => {
+                Func::Builtin(_) => "(builtin)".to_string(),
+                Func::UserDefined(name, params, body, _) => {
                     format!("(defn {} ({}) {})", name, params.join(" "), body)
+                },
+                Func::Closure(params, body, _) => {
+                    format!("(fn ({}) {})", params.join(" "), body)
                 }
             },
         };

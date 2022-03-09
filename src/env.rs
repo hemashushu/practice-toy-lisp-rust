@@ -1,33 +1,36 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::ast::{Func, Object};
 use crate::error::Error;
 
-pub struct Environment<'a> {
+pub struct Environment {
     records: HashMap<String, Object>,
-    parent: Option<&'a Environment<'a>>,
+    // parent: Option<&'a Environment<'a>>,
+    parent: Rc<RefCell<Option<Environment>>>,
 }
 
-impl Environment<'_> {
-    pub fn new<'a>(parent: &'a Environment) -> Environment<'a> {
+impl Environment {
+    pub fn new(parent: &Rc<RefCell<Option<Environment>>>) -> Environment {
         let records: HashMap<String, Object> = HashMap::new();
         Environment {
             records: records,
-            parent: Some(parent),
+            parent: Rc::clone(parent),
         }
     }
 
-    pub fn new_with_records<'a>(
+    pub fn new_with_records(
         records: HashMap<String, Object>,
-        parent: &'a Environment,
-    ) -> Environment<'a> {
+        parent: &Rc<RefCell<Option<Environment>>>,
+    ) -> Environment {
         Environment {
             records: records,
-            parent: Some(parent),
+            parent: Rc::clone(parent),
         }
     }
 
-    pub fn new_global() -> Environment<'static> {
+    pub fn new_global() -> Environment {
         let mut records: HashMap<String, Object> = HashMap::new();
 
         records.insert(
@@ -87,30 +90,52 @@ impl Environment<'_> {
 
         Environment {
             records: records,
-            parent: None,
+            parent: Rc::new(RefCell::new(None)),
         }
     }
 
+    pub fn to_rc_env(self) -> Rc<RefCell<Option<Environment>>> {
+        Rc::new(RefCell::new(Some(self)))
+    }
+
     // 如果名称在当前 scope 里已经定义，则返回 Err
-    pub fn define(&mut self, name: &str, obj: &Object) -> Result<(), Error> {
+    pub fn define(&mut self, name: &str, obj: Object) -> Result<(), Error> {
         if self.records.contains_key(name) {
             return Err(Error::EvalError("identifier already exists".to_string()));
         }
 
         let ns = name.to_string();
-        self.records.insert(ns, obj.clone());
+        self.records.insert(ns, obj);
 
         Ok(())
     }
 
-    pub fn lookup(&self, name: &str) -> Option<&Object> {
+    pub fn lookup(&self, name: &str) -> Option<Object> {
         match self.records.get(name) {
-            Some(o) => Some(o),
-            None => match self.parent {
-                Some(re) => re.lookup(name),
-                None => None,
-            },
+            Some(o) => Some(o.clone()),
+            None => rc_env_lookup(&self.parent, name),
         }
+    }
+}
+
+pub fn rc_env_lookup(rc_env: &Rc<RefCell<Option<Environment>>>, name: &str) -> Option<Object> {
+    match rc_env.borrow().as_ref() {
+        Some(env) => env.lookup(name),
+        None => None,
+    }
+}
+
+pub fn rc_env_define(
+    rc_env: &Rc<RefCell<Option<Environment>>>,
+    name: &str,
+    obj: Object,
+) -> Result<(), Error> {
+    match rc_env.borrow_mut().as_mut() {
+        Some(env) => {
+            // env.records.insert(name.to_string(), obj);
+            env.define(name, obj)
+        }
+        None => Err(Error::EvalError("no outer environment".to_string())),
     }
 }
 
@@ -228,7 +253,10 @@ fn parse_bool(obj: &Object) -> Result<bool, Error> {
 #[cfg(test)]
 mod tests {
     use super::Environment;
-    use crate::ast::{Func, Object};
+    use crate::{
+        ast::{Func, Object},
+        env::{rc_env_define, rc_env_lookup},
+    };
 
     #[test]
     fn test_global_env_builtin_func() {
@@ -255,13 +283,13 @@ mod tests {
         assert!(matches!(r1, None));
 
         // 定义 "foo"，应该返回 Ok
-        let r2 = env.define("foo", &Object::Number(123));
+        let r2 = env.define("foo", Object::Number(123));
         assert!(matches!(r2, Ok(_)));
 
         // 再次获取 "foo"，应该返回刚被定义的对象
         let r3 = env.lookup("foo");
         match r3 {
-            Some(o) => match *o {
+            Some(o) => match o {
                 Object::Number(n) => assert_eq!(n, 123),
                 _ => assert!(false),
             },
@@ -269,34 +297,36 @@ mod tests {
         }
 
         // 再次定义 "foo"，应该返回 Err
-        let r4 = env.define("foo", &Object::Number(456));
+        let r4 = env.define("foo", Object::Number(456));
         assert!(matches!(r4, Err(_)));
     }
 
     #[test]
     fn test_nested_environment() {
-        let mut env_parent = Environment::new_global();
+        let env_parent = Environment::new_global();
+        let rc_env_parent = env_parent.to_rc_env();
 
         // 尝试从 parent 获取 "foo"，应该返回 Err
-        let r1 = env_parent.lookup("foo");
+        let r1 = rc_env_lookup(&rc_env_parent, "foo");
         assert!(matches!(r1, None));
 
         {
-            let env_child = Environment::new(&env_parent);
+            let env_child = Environment::new(&rc_env_parent);
+            let rc_env_child = env_child.to_rc_env();
 
             // 尝试从 child 获取 "foo"，应该返回 Err
-            let c1 = env_child.lookup("foo");
+            let c1 = rc_env_lookup(&rc_env_child, "foo");
             assert!(matches!(c1, None));
         }
 
         // 在 parent 里定义 "foo"
-        let r2 = env_parent.define("foo", &Object::Number(123));
+        let r2 = rc_env_define(&rc_env_parent, "foo", Object::Number(123));
         assert!(matches!(r2, Ok(_)));
 
         // 尝试从 parent 获取 parent "foo"，应该返回 123
-        let r3 = env_parent.lookup("foo");
+        let r3 = rc_env_lookup(&rc_env_parent, "foo");
         match r3 {
-            Some(o) => match *o {
+            Some(obj) => match obj {
                 Object::Number(n) => assert_eq!(n, 123),
                 _ => assert!(false),
             },
@@ -304,12 +334,13 @@ mod tests {
         }
 
         {
-            let mut env_child = Environment::new(&env_parent);
+            let env_child = Environment::new(&rc_env_parent);
+            let rc_env_child = env_child.to_rc_env();
 
             // 尝试从 child 获取 parent 的 "foo"，应该返回 123
-            let c1 = env_child.lookup("foo");
+            let c1 = rc_env_lookup(&rc_env_child, "foo");
             match c1 {
-                Some(o) => match *o {
+                Some(obj) => match obj {
                     Object::Number(n) => assert_eq!(n, 123),
                     _ => assert!(false),
                 },
@@ -318,13 +349,13 @@ mod tests {
 
             // 尝试在 child 里覆盖 "foo"
             // 注：当前 Environment 允许覆盖上层同名的标识符的值
-            let c2 = env_child.define("foo", &Object::Number(456));
+            let c2 = rc_env_define(&rc_env_child, "foo", Object::Number(456));
             assert!(matches!(c2, Ok(_)));
 
             // 尝试从 child 获取 child 的 "foo"，应该返回 456
-            let c3 = env_child.lookup("foo");
+            let c3 = rc_env_lookup(&rc_env_child, "foo");
             match c3 {
-                Some(o) => match *o {
+                Some(o) => match o {
                     Object::Number(n) => assert_eq!(n, 456),
                     _ => assert!(false),
                 },
@@ -332,10 +363,10 @@ mod tests {
             }
         }
 
-        // 尝试从 parent 获取 parent "foo"，应该返回 123
-        let r4 = env_parent.lookup("foo");
+        // 尝试从 parent 获取 parent "foo"，其值应该保持不变，仍然返回 123 而不是 456
+        let r4 = rc_env_lookup(&rc_env_parent, "foo");
         match r4 {
-            Some(o) => match *o {
+            Some(obj) => match obj {
                 Object::Number(n) => assert_eq!(n, 123),
                 _ => assert!(false),
             },
@@ -343,16 +374,17 @@ mod tests {
         }
 
         {
-            let mut env_child = Environment::new(&env_parent);
+            let env_child = Environment::new(&rc_env_parent);
+            let rc_env_child = env_child.to_rc_env();
 
             // 尝试在 child 里定义 "bar"
-            let c1 = env_child.define("bar", &Object::Number(789));
+            let c1 = rc_env_define(&rc_env_child, "bar", Object::Number(789));
             assert!(matches!(c1, Ok(_)));
 
             // 尝试从 child 获取 child 的 "bar"，应该返回 789
-            let c3 = env_child.lookup("bar");
+            let c3 = rc_env_lookup(&rc_env_child, "bar");
             match c3 {
-                Some(o) => match *o {
+                Some(obj) => match obj {
                     Object::Number(n) => assert_eq!(n, 789),
                     _ => assert!(false),
                 },
@@ -361,12 +393,7 @@ mod tests {
         }
 
         // 尝试从 parent 获取 child "bar"，应该返回 Err
-        let r5 = env_parent.lookup("bar");
+        let r5 = rc_env_lookup(&rc_env_parent, "bar");
         assert!(matches!(r5, None));
     }
 }
-
-// pub struct ClosureMap<'a> {
-//     max_id: u32,
-//     envs: HashMap<u32, &'a Environment<'a>>
-// }

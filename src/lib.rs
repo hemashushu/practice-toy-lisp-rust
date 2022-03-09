@@ -1,13 +1,15 @@
-use std::{fs, io};
+use std::{fs, io, rc::Rc, cell::RefCell};
 
-use environment::Environment;
+use env::Environment;
 
 use crate::error::Error;
 
+mod token;
+mod parser;
 pub mod ast;
-mod environment;
+pub mod env;
 pub mod error;
-mod evaluator;
+pub mod eval;
 
 fn read_line() -> String {
     let mut line = String::new();
@@ -18,29 +20,39 @@ fn read_line() -> String {
 pub fn repl() {
     println!("toy lisp");
 
+    let env = Environment::new_global();
+    let rc_env = env.to_rc_env(); // Rc::new(RefCell::new(Some(env)));
+
     loop {
         println!("> ");
         let text = read_line();
-        match eval(&text) {
+        match eval_program(&text, &rc_env) {
             Ok(res) => println!("{}", res),
             Err(err) => match err {
-                Error::EvalError(msg) =>println!("{}", msg)
-            } ,
+                Error::EvalError(msg) => println!("{}", msg),
+            },
         }
     }
 }
 
 pub fn run(filepath: &str) {
     let text = fs::read_to_string(filepath).expect("read file error");
-    match eval(&text) {
+
+    let env = Environment::new_global();
+    let rc_env = env.to_rc_env(); // Rc::new(RefCell::new(Some(env)));
+
+    match eval_program(&text, &rc_env) {
         Ok(res) => println!("{}", res),
         Err(err) => match err {
-            Error::EvalError(msg) =>println!("{}", msg)
-        } ,
+            Error::EvalError(msg) => println!("{}", msg),
+        },
     }
 }
 
-pub fn eval(program: &str) -> Result<ast::Object, error::Error> {
-    let env = &mut Environment::new_global();
-    evaluator::eval_from_string(program, env)
+fn eval_program(
+    program: &str,
+    rc_env: &Rc<RefCell<Option<Environment>>>,
+) -> Result<ast::Object, error::Error> {
+
+    eval::eval_from_string(program, rc_env)
 }
